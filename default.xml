@@ -15,7 +15,9 @@
   
   <project name="seL4_libs-vbtalloc-extension.git" path="projects/seL4_libs" remote="capbuddy"
            revision="420c34bbd0f6824a55a61f7f57573997af3565e8" upstream="master" dest-branch="master"/>
-  <project name="seL4testcase-MR-MC.git" path="projects/testcase-MR-MC" remote="capbuddy" dest-branch="master"/>
+  <project name="seL4testcase-MR-MC.git" path="projects/testcase-MR-MC" remote="capbuddy" dest-branch="master">
+    <linkfile src="easy-settings.cmake" dest="easy-settings.cmake"/>
+  </project>
 
   <project name="musllibc.git" path="projects/musllibc" revision="3d6b939e8f05cb1d2a1a8c8166609bf2e652e975" upstream="sel4" dest-branch="sel4"/>
   <project name="nanopb" path="tools/nanopb" remote="nanopb" revision="1466e6f953835b191a7f5acf0c06c941d4cd33d9" upstream="master" dest-branch="refs/tags/0.4.3"/>
