@@ -6,6 +6,16 @@ cmake_minimum_required(VERSION 3.7.2)
 project(sel4testcase-mce C)
 
 set(configure_string "")
+
+config_option(
+    MRMCTestInfoEnable
+    MRMC_RESOURCE_INFO
+    "To print resource information for MR-MC"
+    DEFAULT
+    OFF
+)
+
+mark_as_advanced(MRMCTestInfoEnable)
 add_config_library(sel4testcase-mce "${configure_string}")
 
 find_package(musllibc REQUIRED)
