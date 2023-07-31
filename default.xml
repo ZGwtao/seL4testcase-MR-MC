@@ -8,15 +8,14 @@
   <remote name="nanopb" fetch="https://github.com/nanopb"/>
   <remote name="opensbi" fetch="https://github.com/riscv"/>
   <remote name="seL4" fetch="https://github.com/seL4/"/>
-  <remote name="capbuddy" fetch="https://github.com/ZGwtao/">
+  <remote name="capbuddy" fetch="https://github.com/ZGwtao/"/>
   <remote name="sel4proj" fetch="https://github.com/sel4proj"/>
   
   <default remote="seL4" revision="master"/>
   
   <project name="seL4_libs-vbtalloc-extension.git" path="projects/seL4_libs" remote="capbuddy"
            revision="420c34bbd0f6824a55a61f7f57573997af3565e8" upstream="master" dest-branch="master"/>
-  <project name="seL4testcase-MR-MC.git" path="projects/testcase-MR-MC" remote="capbuddy"
-           revision="master" dest-branch="master">
+  <project name="seL4testcase-MR-MC.git" path="projects/testcase-MR-MC" remote="capbuddy" dest-branch="master"/>
 
   <project name="musllibc.git" path="projects/musllibc" revision="3d6b939e8f05cb1d2a1a8c8166609bf2e652e975" upstream="sel4" dest-branch="sel4"/>
   <project name="nanopb" path="tools/nanopb" remote="nanopb" revision="1466e6f953835b191a7f5acf0c06c941d4cd33d9" upstream="master" dest-branch="refs/tags/0.4.3"/>
@@ -28,7 +27,5 @@
   </project>
   <project name="sel4_projects_libs" path="projects/sel4_projects_libs" revision="82e0e3f85e7f8b403388e7d7a894ab583b6c8a8a" upstream="master" dest-branch="master"/>
   <project name="sel4runtime.git" path="projects/sel4runtime" revision="d935dd05da0cf959e9fd0140af913dc6fdaa0221" upstream="master" dest-branch="master"/>
-    <linkfile src="easy-settings.cmake" dest="easy-settings.cmake"/>
-  </project>
   <project name="util_libs.git" path="projects/util_libs" revision="dba244d4c82905fc3883e0602b1d8e53124e0577" upstream="master" dest-branch="master"/>
 </manifest>
