@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+   Copyright 2023 zhuguangtao@iie.ac.cn, SKLOIS
+   Copyright 2023 seL4 Project a Series of LF Projects, LLC
+   SPDX-License-Identifier: BSD-2-Clause
+-->
+<manifest>
+  <remote name="nanopb" fetch="https://github.com/nanopb"/>
+  <remote name="opensbi" fetch="https://github.com/riscv"/>
+  <remote name="seL4" fetch="https://github.com/seL4/"/>
+  <remote name="capbuddy" fetch="https://github.com/ZGwtao/">
+  <remote name="sel4proj" fetch="https://github.com/sel4proj"/>
+  
+  <default remote="seL4" revision="master"/>
+  
+  <project name="seL4_libs-vbtalloc-extension.git" path="projects/seL4_libs" remote="capbuddy"
+           revision="420c34bbd0f6824a55a61f7f57573997af3565e8" upstream="master" dest-branch="master"/>
+  <project name="seL4testcase-MR-MC.git" path="projects/testcase-MR-MC" remote="capbuddy"
+           revision="master" dest-branch="master">
+
+  <project name="musllibc.git" path="projects/musllibc" revision="3d6b939e8f05cb1d2a1a8c8166609bf2e652e975" upstream="sel4" dest-branch="sel4"/>
+  <project name="nanopb" path="tools/nanopb" remote="nanopb" revision="1466e6f953835b191a7f5acf0c06c941d4cd33d9" upstream="master" dest-branch="refs/tags/0.4.3"/>
+  <project name="opensbi" path="tools/opensbi" remote="opensbi" revision="234ed8e427f4d92903123199f6590d144e0d9351" upstream="refs/tags/v0.9" dest-branch="refs/tags/v0.9"/>
+  <project name="seL4.git" path="kernel" revision="49f4ddfc8c20249b7a114a4cc3baa42f5f9eaa6c" upstream="master" dest-branch="master"/>
+  <project name="seL4_tools.git" path="tools/seL4" revision="a9d1b6d2b127830d6205e46c983d63e5bb561449" upstream="master" dest-branch="master">
+    <linkfile src="cmake-tool/init-build.sh" dest="init-build.sh"/>
+    <linkfile src="cmake-tool/griddle" dest="griddle"/>
+  </project>
+  <project name="sel4_projects_libs" path="projects/sel4_projects_libs" revision="82e0e3f85e7f8b403388e7d7a894ab583b6c8a8a" upstream="master" dest-branch="master"/>
+  <project name="sel4runtime.git" path="projects/sel4runtime" revision="d935dd05da0cf959e9fd0140af913dc6fdaa0221" upstream="master" dest-branch="master"/>
+    <linkfile src="easy-settings.cmake" dest="easy-settings.cmake"/>
+  </project>
+  <project name="util_libs.git" path="projects/util_libs" revision="dba244d4c82905fc3883e0602b1d8e53124e0577" upstream="master" dest-branch="master"/>
+</manifest>
