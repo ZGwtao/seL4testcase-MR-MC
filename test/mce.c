@@ -1,4 +1,17 @@
+/***
+ * Copyright 2023, zhuguangtao@iie.ac.cn, SKLOIS
+ * --------------------------------------------------------------
+ * Partially borrowed from https://github.com/seL4/sel4test.git
+ * Ref: https://github.com/seL4/seL4_libs/tree/master/libsel4test
+ * --------------------------------------------------------------
+ * 
+ * These codes are for CapBuddy's [M]onte [C]arlo Method simulation
+ * for [M]emory [R]equests. (abbrev. MR-MC), as we may also 'MR-MC'
+ * 'mce' to note Monte Carlo Experiment.
+ * 
+ */
 #include <autoconf.h>
+#include <kernel/gen_config.h>
 #include <sel4vka/gen_config.h>
 #include <sel4allocman/gen_config.h>
 #include <sel4testcase-mce/gen_config.h>
@@ -23,81 +36,117 @@
 #include <sel4platsupport/platsupport.h>
 #include <sel4/benchmark_utilisation_types.h>
 
-struct unienv {
+struct mrmc_env {
+    /***
+     * Three basic components, which are necessarily needed by user-level initial thread,
+     * are provided here: vka (allocator interface object), vspace (page-table manager),
+     * simple (default execution environment)
+     */
     vka_t vka;
     vspace_t vspace;
     simple_t simple;
 };
-typedef struct unienv *unienv_t;
+typedef struct mrmc_env *mrmc_env_t;
 
-#define ALLOCATOR_VIRTUAL_POOL_SIZE ((1ul << (seL4_PageBits + 22)))
-#define ALLOCATOR_STATIC_POOL_SIZE ((1ul << seL4_PageBits) * 400)
-#define BRK_VIRTUAL_DEFAULT_SIZE ((1ul << (seL4_PageBits + 16)))
+#define BRK_VIRTUAL_DEFAULT_SIZE    (1ul << (seL4_PageBits + 10))
+#define ALLOCATOR_VIRTUAL_POOL_SIZE (1ul << (seL4_PageBits + 10))
+#define ALLOCATOR_STATIC_POOL_SIZE  (1ul << (seL4_PageBits +  5))
 
-struct unienv env;
+/* The global environment variable for libOS */
+static struct mrmc_env env;
+
 static sel4utils_alloc_data_t data;
-static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
-static allocman_t *global_allocator;
 
+/* Provided with .bss space for libOS environment bootstrapping */
+static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
+
+/* Define these variables so as we can use malloc/calloc/free */
 extern vspace_t *muslc_this_vspace;
 extern reservation_t muslc_brk_reservation;
 extern void *muslc_brk_reservation_start;
 
-#define _posix_entry_ __posix_entry
+#define MRMC_FUNC_ENTRY __func_entry
 #ifndef ENABLE_CAPBUDDY_EXTENSION
 #define ENABLE_CAPBUDDY_EXTENSION \
     (config_set(CONFIG_LIB_VKA_ALLOW_POOL_OPERATIONS) && \
      config_set(CONFIG_LIB_ALLOCMAN_ALLOW_POOL_OPERATIONS))
 #endif
 
-static void init_env(unienv_t env)
+static void init_env(mrmc_env_t env)
 {
-    allocman_t *allocman;
-    reservation_t virtual_reservation;
-    int error;
-
-    allocman = bootstrap_use_current_simple(&env->simple, ALLOCATOR_STATIC_POOL_SIZE, allocator_mem_pool);
-    if (allocman == NULL)
-    {
+    /***
+     * We should now initialize the allocator (with libsel4allocman utilities) first.
+     * One bootstrap allocator with single-level cspace would be enough for 'MR-MC'.
+     * 
+     * At the very first, only static pool is provided because during bootstrap it's
+     * forbidden for the thread to use virtual space to meet dynamic memory requests.
+     */
+    allocman_t *allocman = bootstrap_use_current_simple(&env->simple,
+                                                        ALLOCATOR_STATIC_POOL_SIZE, allocator_mem_pool);
+    if (allocman == NULL) {
         ZF_LOGF("Failed to create allocman");
     }
-
+    /* Bind vka (allocator interface) with allocman allocator instance. */
     allocman_make_vka(&env->vka, allocman);
 
-    error = sel4utils_bootstrap_vspace_with_bootinfo_leaky(&env->vspace,
-                                                           &data, simple_get_pd(&env->simple),
-                                                           &env->vka, platsupport_get_bootinfo());
-    if (error) {
+    /***
+     * Initialize the vspace manager and bind it to the thread's executing environment
+     * This is necessary because we need to initialize two allocator utilities for dynamic
+     * memory requests, and before doing that, we must reserve the memory regions (in
+     * virtual address space) for them in vspace manager.
+     */
+    int err = sel4utils_bootstrap_vspace_with_bootinfo_leaky(&env->vspace,
+                                                             &data, simple_get_pd(&env->simple),
+                                                             &env->vka, platsupport_get_bootinfo());
+    if (err) {
         ZF_LOGF("Failed to bootstrap vspace");
     }
 
-    sel4utils_res_t *muslc_brk_reservation_memory = allocman_mspace_alloc(allocman, sizeof(sel4utils_res_t), &error);
-    if (error) {
+    sel4utils_res_t *muslc_brk_reservation_memory = allocman_mspace_alloc(allocman, sizeof(sel4utils_res_t), &err);
+    if (err) {
         ZF_LOGE("Failed to alloc virtual memory for muslc heap describing metadata");
     }
-
-    error = sel4utils_reserve_range_no_alloc(&env->vspace, muslc_brk_reservation_memory,
-                                             BRK_VIRTUAL_DEFAULT_SIZE, seL4_AllRights, 1, &muslc_brk_reservation_start);
-    if (error) {
+    /***
+     * We now start to reserve the memory region for muslibcsys utilities, these memory regions
+     * act like the user heap for the thread. By means of initializing them, codes with POSIX's
+     * interfaces are available. (malloc/calloc/free)
+     */
+    err = sel4utils_reserve_range_no_alloc(&env->vspace, muslc_brk_reservation_memory,
+                                           BRK_VIRTUAL_DEFAULT_SIZE, seL4_AllRights, 1, &muslc_brk_reservation_start);
+    if (err) {
         ZF_LOGE("Failed to reserve range for muslc heap initialization");
     }
-
+    /* Binds the global muslibcsys variables */
     muslc_this_vspace = &env->vspace;
     muslc_brk_reservation.res = muslc_brk_reservation_memory;
 
     void *vaddr;
+    reservation_t virtual_reservation;
+    /***
+     * We need to configure on virtual pool for vka->[allocman] allocator, this is because
+     * the allocator itself will use different interfaces (other than POSIX's malloc/calloc/free)
+     * to apply memory requests for allocator metadata to help managing kernel objects' user-level
+     * information.
+     */
     virtual_reservation = vspace_reserve_range(&env->vspace,
                                                ALLOCATOR_VIRTUAL_POOL_SIZE, seL4_AllRights, 1, &vaddr);
+    /***
+     * We need to make sure that the regions for memory requests, which reside in virtual address space,
+     * are successfully reserved by vspace manager, so as new pages can be mapped to activate these
+     * memory regions. (dynamic memory requests server for allocator's metadata)
+     */
     if (virtual_reservation.res == 0) {
-        ZF_LOGF("Failed to provide virtual memory for allocator");
+        ZF_LOGE("Failed to provide virtual memory for allocator");
     }
-
+    /* Now configure the virtual pool (by initializing new interfaces that will require memory dynamically) */
     bootstrap_configure_virtual_pool(allocman, vaddr,
                                      ALLOCATOR_VIRTUAL_POOL_SIZE, simple_get_pd(&env->simple));
-    
-    global_allocator = global_allocator ? global_allocator : allocman;
 }
 
+/***
+ * Random Sequences (based on different policies) of memory request
+ * size (alloc/free size per iteration timestamp)
+ */
 int get_random_size_policy_1()
 {
     int a = random() % 1024;
@@ -165,6 +214,7 @@ int get_random_size_policy_3()
     }
 }
 
+/* Random Sequence of memory request timestamp */
 int get_random_time(int a)
 {
     int b = random() % a;
@@ -175,7 +225,7 @@ int get_random_time(int a)
     return b;
 }
 
-#define MCMC_ITERATION_TIME 20000
+#define MCMC_ITERATION_TIME 80000
 #define MCMC_FREE_FREQUENCY 80
 
 /**
@@ -497,31 +547,35 @@ static int mcmc_exp_simulation()
 
 #endif
 
-void *__posix_entry(void *arg UNUSED)
+void *__func_entry(void *arg UNUSED)
 {
-    printf("\n>>>>>>>> __posix_entry__ <<<<<<<\n");
-    printf("*********** Benchmark ***********\n\n");
-
-    int error;
-    unsigned long long time[50];
-    unsigned long long start = 0, end = 0;
-
+    int err;
+    printf("\n>>>>>>>> __func_entry__ <<<<<<<\n");
+#ifdef CONFIG_KERNEL_BENCHMARK
+    printf("\n*********** Benchmark ***********\n\n");
     uint64_t *ipcbuffer = (uint64_t *)&(seL4_GetIPCBuffer()->msg[0]);
-
     seL4_BenchmarkResetThreadUtilisation(simple_get_tcb(&env.simple));
     seL4_BenchmarkResetLog();
-
-    error = mcmc_exp_simulation();
-
+#endif
+    err = mcmc_exp_simulation();
+    if (err != seL4_NoError) {
+        assert(0);
+    }
+#ifdef CONFIG_KERNEL_BENCHMARK
     seL4_BenchmarkFinalizeLog();
     seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env.simple));
-
     printf("\n*********** Benchmark ***********\n");
     printf("\nCPU cycles spent: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+#endif
+    printf("\n>>>>>>>> __func__exit__ <<<<<<<\n");
 }
 
-static void sel4test_exit(int code)
-{
+static void sel4test_exit(int code) {
+    /***
+     * Suspend first initial thread (which is the thread we are in)
+     * (add it into scheduling queue in kernel) through TCB_Suspend
+     * interface.
+     */
     seL4_TCB_Suspend(seL4_CapInitThreadTCB);
 }
 
@@ -529,11 +583,27 @@ int main(void)
 {
     void *res;
     sel4runtime_set_exit(sel4test_exit);
+    /***
+     * Receive bootinfo from sel4runtime, which is provided throughly
+     * by seL4 kernel, and use it to create & initial executing environment.
+     */
     seL4_BootInfo *info = platsupport_get_bootinfo();
     simple_default_init_bootinfo(&env.simple, info);
-    simple_print(&env.simple);
+    /***
+     * (Optional) To print the bootstrapping information.
+     */
+    if (config_set(CONFIG_MRMC_RESOURCE_INFO)) {
+        simple_print(&env.simple);
+    }
+    /***
+     * Initialize environment. Including allocator (allocman) bootstrapping,
+     * vspace, I/O operations, etc,.
+     */
     init_env(&env);
-    int error = sel4utils_run_on_stack(&env.vspace, _posix_entry_, NULL, &res);
+    /***
+     * Start to run it now.
+     */
+    int error = sel4utils_run_on_stack(&env.vspace, MRMC_FUNC_ENTRY, NULL, &res);
     test_assert_fatal(error == 0);
     return 0;
 }
