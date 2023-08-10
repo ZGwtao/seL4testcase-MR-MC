@@ -15,6 +15,7 @@
 #include <sel4vka/gen_config.h>
 #include <sel4allocman/gen_config.h>
 #include <sel4testcase-mce/gen_config.h>
+#include <sel4muslcsys/gen_config.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -60,10 +61,12 @@ static sel4utils_alloc_data_t data;
 /* Provided with .bss space for libOS environment bootstrapping */
 static char allocator_mem_pool[ALLOCATOR_STATIC_POOL_SIZE];
 
+#if (CONFIG_LIB_SEL4_MUSLC_SYS_MORECORE_BYTES == 0)
 /* Define these variables so as we can use malloc/calloc/free */
 extern vspace_t *muslc_this_vspace;
 extern reservation_t muslc_brk_reservation;
 extern void *muslc_brk_reservation_start;
+#endif
 
 #define MRMC_FUNC_ENTRY __func_entry
 #ifndef ENABLE_CAPBUDDY_EXTENSION
@@ -101,7 +104,7 @@ static void init_env(mrmc_env_t env)
     if (err) {
         ZF_LOGF("Failed to bootstrap vspace");
     }
-
+#if (CONFIG_LIB_SEL4_MUSLC_SYS_MORECORE_BYTES == 0)
     sel4utils_res_t *muslc_brk_reservation_memory = allocman_mspace_alloc(allocman, sizeof(sel4utils_res_t), &err);
     if (err) {
         ZF_LOGE("Failed to alloc virtual memory for muslc heap describing metadata");
@@ -119,7 +122,7 @@ static void init_env(mrmc_env_t env)
     /* Binds the global muslibcsys variables */
     muslc_this_vspace = &env->vspace;
     muslc_brk_reservation.res = muslc_brk_reservation_memory;
-
+#endif
     void *vaddr;
     reservation_t virtual_reservation;
     /***
@@ -311,7 +314,7 @@ static int mcmc_exp_simulation()
         */
         mcmc_errno = vka_alloc_frame_contiguous(vka, ta_block_size, &ta_frame_sanitizer, tx->compressed_frames);
         if (mcmc_errno) {
-            printf("[DONE]: total %ld iteration %d\n", total - ta_frame_count, i - 1);
+            printf("[DONE]: total %d iteration %d\n", total - ta_frame_count, i - 1);
             assert(0);
         }
 
@@ -352,7 +355,7 @@ static int mcmc_exp_simulation()
         }
         total += ta_frame_count;
     }
-    printf("[DONE]: total %ld iteration %d\n", total, i);
+    printf("[DONE]: total %d iteration %d\n", total, i);
     return 0;
 }
 
@@ -442,7 +445,7 @@ static int mcmc_exp_simulation()
         */
         mcmc_errno = vka_alloc_object(vka, seL4_UntypedObject, ta_block_size, tx->origin_untyped_object);
         if (mcmc_errno) {
-            printf("[DONE]: total %ld iteration %d\n", total - ta_frame_count, i - 1);
+            printf("[DONE]: total %d iteration %d\n", total - ta_frame_count, i - 1);
             assert(0); // abort as error handling (temporarily)
         }
         /**
@@ -541,7 +544,7 @@ static int mcmc_exp_simulation()
         }
         total += ta_frame_count;
     }
-    printf("[DONE]: total %ld iteration %d\n", total, i);
+    printf("[DONE]: total %d iteration %d\n", total, i);
     return 0;
 }
 
@@ -565,7 +568,8 @@ void *__func_entry(void *arg UNUSED)
     seL4_BenchmarkFinalizeLog();
     seL4_BenchmarkGetThreadUtilisation(simple_get_tcb(&env.simple));
     printf("\n*********** Benchmark ***********\n");
-    printf("\nCPU cycles spent: %ld\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nCPU cycles spent (TCB-Schedule): %llu\n", ipcbuffer[BENCHMARK_TCB_UTILISATION]);
+    printf("\nCPU cycles spent (TCB-Kernel): %llu\n", ipcbuffer[BENCHMARK_TCB_KERNEL_UTILISATION]);
 #endif
     printf("\n>>>>>>>> __func__exit__ <<<<<<<\n");
 }
